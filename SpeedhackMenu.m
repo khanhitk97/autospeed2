@@ -12,7 +12,7 @@ extern void set_speed_factor(float factor);
 #endif
 
 // ==========================================
-// 1. FLY VIEW (VẼ VÀ TẠO ANIMATION BÉ RUỒI)
+// 1. FLY VIEW (BÉ RUỒI ĐẬP CÁNH & BAY LƯỢN)
 // ==========================================
 @interface FlyView : UIView
 @property (nonatomic, strong) UIView *leftWing;
@@ -25,14 +25,14 @@ extern void set_speed_factor(float factor);
 - (instancetype)initWithFrame:(CGRect)frame {
     self = [super initWithFrame:CGRectMake(frame.origin.x, frame.origin.y, 24, 24)];
     if (self) {
-        self.userInteractionEnabled = NO; // Không chặn cảm ứng game
+        self.userInteractionEnabled = NO;
 
         // Thân ruồi
         _bodyView = [[UIView alloc] initWithFrame:CGRectMake(9, 3, 6, 18)];
         _bodyView.backgroundColor = [UIColor colorWithRed:0.12 green:0.12 blue:0.12 alpha:0.95];
         _bodyView.layer.cornerRadius = 3.0;
 
-        // Mắt ruồi (Đỏ sẫm)
+        // Mắt ruồi
         UIView *leftEye = [[UIView alloc] initWithFrame:CGRectMake(8, 2, 2.5, 2.5)];
         leftEye.backgroundColor = [UIColor colorWithRed:0.75 green:0.1 blue:0.1 alpha:0.9];
         leftEye.layer.cornerRadius = 1.25;
@@ -41,7 +41,7 @@ extern void set_speed_factor(float factor);
         rightEye.backgroundColor = [UIColor colorWithRed:0.75 green:0.1 blue:0.1 alpha:0.9];
         rightEye.layer.cornerRadius = 1.25;
 
-        // Cánh trái (Trong suốt mờ)
+        // Cánh trái
         _leftWing = [[UIView alloc] initWithFrame:CGRectMake(1, 6, 9, 14)];
         _leftWing.backgroundColor = [UIColor colorWithWhite:0.95 alpha:0.65];
         _leftWing.layer.cornerRadius = 4.5;
@@ -49,7 +49,7 @@ extern void set_speed_factor(float factor);
         _leftWing.layer.borderWidth = 0.5;
         _leftWing.layer.borderColor = [UIColor colorWithWhite:0.7 alpha:0.4].CGColor;
 
-        // Cánh phải (Trong suốt mờ)
+        // Cánh phải
         _rightWing = [[UIView alloc] initWithFrame:CGRectMake(14, 6, 9, 14)];
         _rightWing.backgroundColor = [UIColor colorWithWhite:0.95 alpha:0.65];
         _rightWing.layer.cornerRadius = 4.5;
@@ -69,7 +69,6 @@ extern void set_speed_factor(float factor);
     return self;
 }
 
-// Animation vỗ cánh liên tục
 - (void)startWingFlapping {
     CABasicAnimation *leftFlap = [CABasicAnimation animationWithKeyPath:@"transform.rotation.z"];
     leftFlap.fromValue = @(-M_PI / 10.0);
@@ -88,13 +87,12 @@ extern void set_speed_factor(float factor);
     [_rightWing.layer addAnimation:rightFlap forKey:@"rightFlap"];
 }
 
-// AI tự bò / bay ngẫu nhiên trên màn hình
 - (void)startAI {
     [self scheduleNextMove];
 }
 
 - (void)scheduleNextMove {
-    float delay = (arc4random_uniform(15) + 5) / 10.0f; // Nghỉ từ 0.5s - 2.0s
+    float delay = (arc4random_uniform(15) + 5) / 10.0f;
     [NSTimer scheduledTimerWithTimeInterval:delay target:self selector:@selector(performMove) userInfo:nil repeats:NO];
 }
 
@@ -130,7 +128,7 @@ extern void set_speed_factor(float factor);
 @end
 
 // ==========================================
-// 2. SPEEDHACK MENU OVERLAY (QUẢN LÝ GESTURE)
+// 2. OVERLAY LẮNG NGHE CỬ CHỈ BẬT / TẮT
 // ==========================================
 @interface SpeedhackMenu : UIView <UIGestureRecognizerDelegate>
 @property (nonatomic, strong) FlyView *fly;
@@ -169,39 +167,41 @@ extern void set_speed_factor(float factor);
         self.backgroundColor = [UIColor clearColor];
         self.userInteractionEnabled = YES;
 
-        // Mặc định BẬT 5.0x và hiển thị bé ruồi
         _isSpeedEnabled = YES;
         set_speed_factor(5.0f);
 
         _fly = [[FlyView alloc] initWithFrame:CGRectMake(frame.size.width / 2.0, frame.size.height / 2.0, 24, 24)];
         [self addSubview:_fly];
 
-        // Cử chỉ chạm 3 ngón 2 lần (3 touches, 2 taps)
+        // Dùng 3 ngón tay chạm 2 lần
         UITapGestureRecognizer *tripleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleSecretGesture:)];
         tripleTap.numberOfTouchesRequired = 3;
         tripleTap.numberOfTapsRequired = 2;
         tripleTap.cancelsTouchesInView = NO;
+        tripleTap.delaysTouchesBegan = NO;
+        tripleTap.delaysTouchesEnded = NO;
         tripleTap.delegate = self;
         [self addGestureRecognizer:tripleTap];
     }
     return self;
 }
 
-// Bỏ chặn cảm ứng để game nhận 100% thao tác
-- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
-    return nil;
-}
-
+// Cho phép truyền cử chỉ song song xuống game
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
     return YES;
 }
 
-// Chuyển đổi trạng thái Bật / Tắt
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch {
+    return YES;
+}
+
+// Xử lý bật / tắt
 - (void)handleSecretGesture:(UITapGestureRecognizer *)gesture {
     if (gesture.state != UIGestureRecognizerStateEnded) return;
 
     _isSpeedEnabled = !_isSpeedEnabled;
 
+    // Rung phản hồi Haptic
     if (@available(iOS 10.0, *)) {
         UIImpactFeedbackGenerator *feedback = [[UIImpactFeedbackGenerator alloc] initWithStyle:_isSpeedEnabled ? UIImpactFeedbackStyleHeavy : UIImpactFeedbackStyleRigid];
         [feedback prepare];
@@ -209,7 +209,7 @@ extern void set_speed_factor(float factor);
     }
 
     if (_isSpeedEnabled) {
-        // BẬT: 5x và hiện ruồi
+        // BẬT: 5.0x + Hiện Bé Ruồi
         set_speed_factor(5.0f);
         _fly.hidden = NO;
         [UIView animateWithDuration:0.3 animations:^{
@@ -218,7 +218,7 @@ extern void set_speed_factor(float factor);
         }];
         [_fly scheduleNextMove];
     } else {
-        // TẮT: 1x gốc và ẩn ruồi
+        // TẮT: 1.0x chuẩn gốc + Biến mất
         set_speed_factor(1.0f);
         [UIView animateWithDuration:0.3 animations:^{
             self.fly.alpha = 0.0;
