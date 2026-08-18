@@ -6,7 +6,7 @@
 #import <os/lock.h>
 #import "fishhook.h"
 
-static float speed_factor = 5.0f; // Mặc định khởi chạy là 5x
+static float speed_factor = 5.0f;
 static os_unfair_lock speed_lock = OS_UNFAIR_LOCK_INIT;
 
 #ifdef __cplusplus
