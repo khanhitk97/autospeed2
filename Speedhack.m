@@ -6,20 +6,8 @@
 #import <os/lock.h>
 #import "fishhook.h"
 
-static float speed_factor = 5.0f;
+static float speed_factor = 5.0f; // Mặc định khởi chạy là 5x
 static os_unfair_lock speed_lock = OS_UNFAIR_LOCK_INIT;
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-void set_speed_factor(float factor) {
-    os_unfair_lock_lock(&speed_lock);
-    speed_factor = factor;
-    os_unfair_lock_unlock(&speed_lock);
-}
-#ifdef __cplusplus
-}
-#endif
 
 static int (*orig_gettimeofday)(struct timeval *tv, struct timezone *tz) = NULL;
 static CFAbsoluteTime (*orig_CFAbsoluteTimeGetCurrent)(void) = NULL;
@@ -29,11 +17,42 @@ static struct timeval last_real_tv = {0, 0}, fake_tv = {0, 0};
 static CFAbsoluteTime last_real_cf = 0, fake_cf = 0;
 static uint64_t last_real_mach = 0, fake_mach = 0;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void set_speed_factor(float factor) {
+    os_unfair_lock_lock(&speed_lock);
+    speed_factor = factor;
+    
+    // NẾU TẮT (VỀ 1X) -> RESET TOÀN BỘ MỐC ĐỂ BYPASS THẲNG 100% GỐC
+    if (factor == 1.0f) {
+        last_real_tv = (struct timeval){0, 0};
+        fake_tv = (struct timeval){0, 0};
+        last_real_cf = 0;
+        fake_cf = 0;
+        last_real_mach = 0;
+        fake_mach = 0;
+    }
+    os_unfair_lock_unlock(&speed_lock);
+}
+
+#ifdef __cplusplus
+}
+#endif
+
+// Hook 1: gettimeofday
 int my_gettimeofday(struct timeval *tv, struct timezone *tz) {
     int ret = orig_gettimeofday(tv, tz);
     if (ret != 0 || !tv) return ret;
 
     os_unfair_lock_lock(&speed_lock);
+    // Nếu đang TẮT (1x) -> Trả thẳng thời gian thực của iOS
+    if (speed_factor == 1.0f) {
+        os_unfair_lock_unlock(&speed_lock);
+        return ret;
+    }
+
     if (last_real_tv.tv_sec == 0) {
         last_real_tv = *tv;
         fake_tv = *tv;
@@ -56,9 +75,17 @@ int my_gettimeofday(struct timeval *tv, struct timezone *tz) {
     return ret;
 }
 
+// Hook 2: CFAbsoluteTimeGetCurrent
 CFAbsoluteTime my_CFAbsoluteTimeGetCurrent(void) {
     CFAbsoluteTime real_now = orig_CFAbsoluteTimeGetCurrent();
+
     os_unfair_lock_lock(&speed_lock);
+    // Nếu đang TẮT (1x) -> Trả thẳng thời gian thực của iOS
+    if (speed_factor == 1.0f) {
+        os_unfair_lock_unlock(&speed_lock);
+        return real_now;
+    }
+
     if (last_real_cf == 0) {
         last_real_cf = real_now;
         fake_cf = real_now;
@@ -71,9 +98,17 @@ CFAbsoluteTime my_CFAbsoluteTimeGetCurrent(void) {
     return result;
 }
 
+// Hook 3: mach_absolute_time
 uint64_t my_mach_absolute_time(void) {
     uint64_t real_now = orig_mach_absolute_time();
+
     os_unfair_lock_lock(&speed_lock);
+    // Nếu đang TẮT (1x) -> Trả thẳng thời gian thực của iOS
+    if (speed_factor == 1.0f) {
+        os_unfair_lock_unlock(&speed_lock);
+        return real_now;
+    }
+
     if (last_real_mach == 0) {
         last_real_mach = real_now;
         fake_mach = real_now;
