@@ -51,7 +51,7 @@ extern void set_speed_factor(float factor);
         [_mainBtn addTarget:self action:@selector(toggleMenu) forControlEvents:UIControlEventTouchUpInside];
         [self addSubview:_mainBtn];
 
-        // Kéo thả menu
+        // Gesture kéo thả
         [self addGestureRecognizer:[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)]];
 
         // Thanh mở rộng
@@ -73,6 +73,24 @@ extern void set_speed_factor(float factor);
         self.alpha = 0.15;
     }
     return self;
+}
+
+// XỬ LÝ NHẬN DIỆN CẢM ỨNG NGOÀI PHẠM VI 50x50
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    if (self.hidden || self.alpha < 0.01) return nil;
+
+    CGPoint mainPoint = [self convertPoint:point toView:self.mainBtn];
+    if ([self.mainBtn pointInside:mainPoint withEvent:event]) {
+        return self.mainBtn;
+    }
+
+    if (!self.panel.hidden && self.panel.alpha > 0.01) {
+        CGPoint panelPoint = [self convertPoint:point toView:self.panel];
+        if ([self.panel pointInside:panelPoint withEvent:event]) {
+            return [self.panel hitTest:panelPoint withEvent:event];
+        }
+    }
+    return nil;
 }
 
 - (UIButton *)makeBtn:(NSString *)title tag:(NSInteger)tag frame:(CGRect)frame {
