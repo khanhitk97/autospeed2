@@ -25,7 +25,7 @@ extern void set_speed_factor(float factor);
 - (instancetype)initWithFrame:(CGRect)frame {
     self = [super initWithFrame:CGRectMake(frame.origin.x, frame.origin.y, 24, 24)];
     if (self) {
-        self.userInteractionEnabled = NO;
+        self.userInteractionEnabled = NO; // Tuyệt đối không cản trở cảm ứng
 
         // Thân ruồi
         _bodyView = [[UIView alloc] initWithFrame:CGRectMake(9, 3, 6, 18)];
@@ -128,21 +128,23 @@ extern void set_speed_factor(float factor);
 @end
 
 // ==========================================
-// 2. OVERLAY LẮNG NGHE CỬ CHỈ BẬT / TẮT
+// 2. SPEEDHACK MANAGER (GẮN CỬ CHỈ VÀO WINDOW GỐC)
 // ==========================================
-@interface SpeedhackMenu : UIView <UIGestureRecognizerDelegate>
+@interface SpeedhackManager : NSObject <UIGestureRecognizerDelegate>
 @property (nonatomic, strong) FlyView *fly;
 @property (nonatomic, assign) BOOL isSpeedEnabled;
 @end
 
-@implementation SpeedhackMenu
+@implementation SpeedhackManager
+
+static SpeedhackManager *sharedManager = nil;
 
 + (void)load {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         UIWindow *keyWindow = [self getKeyWindow];
         if (keyWindow) {
-            SpeedhackMenu *overlay = [[SpeedhackMenu alloc] initWithFrame:keyWindow.bounds];
-            [keyWindow addSubview:overlay];
+            sharedManager = [[SpeedhackManager alloc] init];
+            [sharedManager setupInWindow:keyWindow];
         }
     });
 }
@@ -158,35 +160,29 @@ extern void set_speed_factor(float factor);
             }
         }
     }
-    return nil;
+    return [UIApplication sharedApplication].keyWindow;
 }
 
-- (instancetype)initWithFrame:(CGRect)frame {
-    self = [super initWithFrame:frame];
-    if (self) {
-        self.backgroundColor = [UIColor clearColor];
-        self.userInteractionEnabled = YES;
+- (void)setupInWindow:(UIWindow *)window {
+    _isSpeedEnabled = YES;
+    set_speed_factor(5.0f);
 
-        _isSpeedEnabled = YES;
-        set_speed_factor(5.0f);
+    // Chỉ thêm đúng view Bé Ruồi vào Window (kích thước nhỏ 24x24, không che màn hình)
+    _fly = [[FlyView alloc] initWithFrame:CGRectMake(window.bounds.size.width / 2.0, window.bounds.size.height / 2.0, 24, 24)];
+    [window addSubview:_fly];
 
-        _fly = [[FlyView alloc] initWithFrame:CGRectMake(frame.size.width / 2.0, frame.size.height / 2.0, 24, 24)];
-        [self addSubview:_fly];
-
-        // Dùng 3 ngón tay chạm 2 lần
-        UITapGestureRecognizer *tripleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleSecretGesture:)];
-        tripleTap.numberOfTouchesRequired = 3;
-        tripleTap.numberOfTapsRequired = 2;
-        tripleTap.cancelsTouchesInView = NO;
-        tripleTap.delaysTouchesBegan = NO;
-        tripleTap.delaysTouchesEnded = NO;
-        tripleTap.delegate = self;
-        [self addGestureRecognizer:tripleTap];
-    }
-    return self;
+    // Gắn cử chỉ 3 ngón 2 lần trực tiếp vào Window
+    UITapGestureRecognizer *tripleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleSecretGesture:)];
+    tripleTap.numberOfTouchesRequired = 3;
+    tripleTap.numberOfTapsRequired = 2;
+    tripleTap.cancelsTouchesInView = NO;
+    tripleTap.delaysTouchesBegan = NO;
+    tripleTap.delaysTouchesEnded = NO;
+    tripleTap.delegate = self;
+    [window addGestureRecognizer:tripleTap];
 }
 
-// Cho phép truyền cử chỉ song song xuống game
+// Bắt buộc cho phép gesture chạy song song 100% với game
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
     return YES;
 }
@@ -195,7 +191,6 @@ extern void set_speed_factor(float factor);
     return YES;
 }
 
-// Xử lý bật / tắt
 - (void)handleSecretGesture:(UITapGestureRecognizer *)gesture {
     if (gesture.state != UIGestureRecognizerStateEnded) return;
 
