@@ -1,4 +1,6 @@
 #import <UIKit/UIKit.h>
+#import <CoreGraphics/CoreGraphics.h>
+#import <AudioToolbox/AudioToolbox.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -8,168 +10,232 @@ extern void set_speed_factor(float factor);
 }
 #endif
 
-@interface SpeedhackMenu : UIView
-@property (nonatomic, strong) UIButton *mainBtn;
-@property (nonatomic, strong) UIView *panel;
-@property (nonatomic, strong) UIButton *btnOff;
-@property (nonatomic, strong) UIButton *btnOn;
-@property (nonatomic, strong) NSTimer *fadeTimer;
-@property (nonatomic, assign) BOOL isEnabled;
+// ==========================================
+// 1. FLY VIEW (VẼ VÀ TẠO ANIMATION BÉ RUỒI)
+// ==========================================
+@interface FlyView : UIView
+@property (nonatomic, strong) UIView *leftWing;
+@property (nonatomic, strong) UIView *rightWing;
+@property (nonatomic, strong) UIView *bodyView;
+@property (nonatomic, strong) NSTimer *crawlTimer;
+@property (nonatomic, assign) BOOL isCrawling;
 @end
 
-@implementation SpeedhackMenu
-
-+ (void)load {
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        UIWindow *window = nil;
-        if (@available(iOS 13.0, *)) {
-            for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
-                if (scene.activationState == UISceneActivationStateForegroundActive && [scene isKindOfClass:[UIWindowScene class]]) {
-                    for (UIWindow *w in ((UIWindowScene *)scene).windows) {
-                        if (w.isKeyWindow) { window = w; break; }
-                    }
-                }
-            }
-        }
-        if (window) [window addSubview:[[SpeedhackMenu alloc] initWithFrame:CGRectMake(20, 150, 50, 50)]];
-    });
-}
+@implementation FlyView
 
 - (instancetype)initWithFrame:(CGRect)frame {
-    self = [super initWithFrame:frame];
+    self = [super initWithFrame:CGRectMake(frame.origin.x, frame.origin.y, 24, 24)];
     if (self) {
-        _isEnabled = YES; // Mặc định mở game là BẬT 5x
-        set_speed_factor(5.0f);
+        self.userInteractionEnabled = NO; // Cho phép bấm xuyên qua ruồi, không cản trở game
 
-        // Nút tròn chính
-        _mainBtn = [UIButton buttonWithType:UIButtonTypeCustom];
-        _mainBtn.frame = CGRectMake(0, 0, 50, 50);
-        _mainBtn.layer.cornerRadius = 25;
-        _mainBtn.layer.borderWidth = 2;
-        _mainBtn.layer.borderColor = [UIColor whiteColor].CGColor;
-        _mainBtn.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightBold];
-        [_mainBtn addTarget:self action:@selector(toggleMenu) forControlEvents:UIControlEventTouchUpInside];
-        [self addSubview:_mainBtn];
+        // Thân ruồi (Bao gồm đầu, ngực, bụng)
+        _bodyView = [[UIView alloc] initWithFrame:CGRectMake(9, 3, 6, 18)];
+        _bodyView.backgroundColor = [UIColor colorWithRed:0.12 green:0.12 blue:0.12 alpha:0.95];
+        _bodyView.layer.cornerRadius = 3.0;
 
-        // Gesture kéo thả
-        [self addGestureRecognizer:[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)]];
+        // Mắt ruồi (Đỏ sẫm)
+        UIView *leftEye = [[UIView alloc] initWithFrame:CGRectMake(8, 2, 2.5, 2.5)];
+        leftEye.backgroundColor = [UIColor colorWithRed:0.75 green:0.1 blue:0.1 alpha:0.9];
+        leftEye.layer.cornerRadius = 1.25;
 
-        // Thanh mở rộng
-        _panel = [[UIView alloc] initWithFrame:CGRectMake(55, 2.5, 175, 45)];
-        _panel.backgroundColor = [UIColor colorWithRed:0.12 green:0.12 blue:0.14 alpha:0.95];
-        _panel.layer.cornerRadius = 12;
-        _panel.layer.borderWidth = 1.5;
-        _panel.layer.borderColor = [UIColor colorWithRed:0.1 green:0.55 blue:1.0 alpha:1.0].CGColor;
-        _panel.hidden = YES;
-        _panel.alpha = 0.0;
+        UIView *rightEye = [[UIView alloc] initWithFrame:CGRectMake(13.5, 2, 2.5, 2.5)];
+        rightEye.backgroundColor = [UIColor colorWithRed:0.75 green:0.1 blue:0.1 alpha:0.9];
+        rightEye.layer.cornerRadius = 1.25;
 
-        _btnOff = [self makeBtn:@"1: TẮT" tag:1 frame:CGRectMake(8, 7.5, 75, 30)];
-        _btnOn = [self makeBtn:@"2: BẬT" tag:2 frame:CGRectMake(91, 7.5, 75, 30)];
-        [_panel addSubview:_btnOff];
-        [_panel addSubview:_btnOn];
-        [self addSubview:_panel];
+        // Cánh trái (Trong suốt mờ)
+        _leftWing = [[UIView alloc] initWithFrame:CGRectMake(1, 6, 9, 14)];
+        _leftWing.backgroundColor = [UIColor colorWithWhite:0.95 alpha:0.65];
+        _leftWing.layer.cornerRadius = 4.5;
+        _leftWing.layer.anchorPoint = CGPointMake(1.0, 0.2); // Tâm vẫy cánh sát thân
+        _leftWing.layer.borderWidth = 0.5;
+        _leftWing.layer.borderColor = [UIColor colorWithWhite:0.7 alpha:0.4].CGColor;
 
-        [self updateUI];
-        self.alpha = 0.15;
+        // Cánh phải (Trong suốt mờ)
+        _rightWing = [[UIView alloc] initWithFrame:CGRectMake(14, 6, 9, 14)];
+        _rightWing.backgroundColor = [UIColor colorWithWhite:0.95 alpha:0.65];
+        _rightWing.layer.cornerRadius = 4.5;
+        _rightWing.layer.anchorPoint = CGPointMake(0.0, 0.2); // Tâm vẫy cánh sát thân
+        _rightWing.layer.borderWidth = 0.5;
+        _rightWing.layer.borderColor = [UIColor colorWithWhite:0.7 alpha:0.4].CGColor;
+
+        [self addSubview:_leftWing];
+        [self addSubview:_rightWing];
+        [self addSubview:_bodyView];
+        [self addSubview:leftEye];
+        [self addSubview:rightEye];
+
+        [self startWingFlapping];
+        [self startAI];
     }
     return self;
 }
 
-// XỬ LÝ NHẬN DIỆN CẢM ỨNG NGOÀI PHẠM VI 50x50
-- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
-    if (self.hidden || self.alpha < 0.01) return nil;
+// Animation đập cánh siêu tốc
+- (void)startWingFlapping {
+    CABasicAnimation *leftFlap = [CABasicAnimation animationWithKeyPath:@"transform.rotation.z"];
+    leftFlap.fromValue = @(-M_PI / 10.0);
+    leftFlap.toValue = @(-M_PI / 2.2);
+    leftFlap.duration = 0.04; // Tần số đập cực nhanh
+    leftFlap.autoreverses = YES;
+    leftFlap.repeatCount = HUGE_VALF;
+    [_leftWing.layer addAnimation:leftFlap forKey:@"leftFlap"];
 
-    CGPoint mainPoint = [self convertPoint:point toView:self.mainBtn];
-    if ([self.mainBtn pointInside:mainPoint withEvent:event]) {
-        return self.mainBtn;
-    }
+    CABasicAnimation *rightFlap = [CABasicAnimation animationWithKeyPath:@"transform.rotation.z"];
+    rightFlap.fromValue = @(M_PI / 10.0);
+    rightFlap.toValue = @(M_PI / 2.2);
+    rightFlap.duration = 0.04;
+    rightFlap.autoreverses = YES;
+    rightFlap.repeatCount = HUGE_VALF;
+    [_rightWing.layer addAnimation:rightFlap forKey:@"rightFlap"];
+}
 
-    if (!self.panel.hidden && self.panel.alpha > 0.01) {
-        CGPoint panelPoint = [self convertPoint:point toView:self.panel];
-        if ([self.panel pointInside:panelPoint withEvent:event]) {
-            return [self.panel hitTest:panelPoint withEvent:event];
+// Trí tuệ nhân tạo (AI) cho ruồi tự bò, chuyển hướng và bay lượn
+- (void)startAI {
+    [self scheduleNextMove];
+}
+
+- (void)scheduleNextMove {
+    float delay = (arc4random_uniform(15) + 5) / 10.0f; // Nghỉ ngẫu nhiên từ 0.5s - 2.0s
+    [NSTimer scheduledTimerWithTimeInterval:delay target:self selector:@selector(performMove) userInfo:nil repeats:NO];
+}
+
+- (void)performMove {
+    if (!self.superview || self.hidden) return;
+
+    CGSize parentSize = self.superview.bounds.size;
+    CGFloat currentX = self.center.x;
+    CGFloat currentY = self.center.y;
+
+    // Chọn điểm đến ngẫu nhiên trong màn hình
+    CGFloat targetX = arc4random_uniform((uint32_t)(parentSize.width - 60)) + 30;
+    CGFloat targetY = arc4random_uniform((uint32_t)(parentSize.height - 100)) + 50;
+
+    CGFloat deltaX = targetX - currentX;
+    CGFloat deltaY = targetY - currentY;
+    CGFloat distance = sqrtf(deltaX * deltaX + deltaY * deltaY);
+
+    // Tính góc xoay đầu hướng về điểm đến (Góc mặc định của sprite hướng lên trên -Y)
+    CGFloat angle = atan2f(deltaY, deltaX) + M_PI_2;
+
+    // 70% là bò ngắn, 30% là bay vọt đi xa
+    CGFloat duration = (distance > 200) ? 0.35f : (distance / 80.0f);
+    if (duration < 0.2f) duration = 0.2f;
+
+    // Xoay đầu trước khi di chuyển
+    [UIView animateWithDuration:0.1 animations:^{
+        self.transform = CGAffineTransformMakeRotation(angle);
+    } completion:^(BOOL finished) {
+        // Bắt đầu di chuyển / bay tới đích
+        [UIView animateWithDuration:duration delay:0 options:UIViewAnimationOptionCurveEaseInOut animations:^{
+            self.center = CGPointMake(targetX, targetY);
+        } completion:^(BOOL fin) {
+            [self scheduleNextMove];
+        }];
+    }];
+}
+
+@end
+
+// ==========================================
+// 2. OVERLAY QUẢN LÝ CỬ CHỈ 3 NGÓN CHẠM 2 LẦN
+// ==========================================
+@interface FlyOverlayWindow : UIView <UIGestureRecognizerDelegate>
+@property (nonatomic, strong) FlyView *fly;
+@property (nonatomic, assign) BOOL isSpeedEnabled;
+@end
+
+@implementation FlyOverlayWindow
+
++ (void)load {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        UIWindow *keyWindow = [self getKeyWindow];
+        if (keyWindow) {
+            FlyOverlayWindow *overlay = [[FlyOverlayWindow alloc] initWithFrame:keyWindow.bounds];
+            [keyWindow addSubview:overlay];
+        }
+    });
+}
+
++ (UIWindow *)getKeyWindow {
+    if (@available(iOS 13.0, *)) {
+        for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
+            if (scene.activationState == UISceneActivationStateForegroundActive && [scene isKindOfClass:[UIWindowScene class]]) {
+                for (UIWindow *w in ((UIWindowScene *)scene).windows) {
+                    if (w.isKeyWindow) return w;
+                }
+            }
         }
     }
     return nil;
 }
 
-- (UIButton *)makeBtn:(NSString *)title tag:(NSInteger)tag frame:(CGRect)frame {
-    UIButton *btn = [UIButton buttonWithType:UIButtonTypeCustom];
-    btn.frame = frame;
-    btn.tag = tag;
-    btn.layer.cornerRadius = 8;
-    btn.titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightBold];
-    [btn setTitle:title forState:UIControlStateNormal];
-    [btn addTarget:self action:@selector(btnTapped:) forControlEvents:UIControlEventTouchUpInside];
-    return btn;
-}
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        self.backgroundColor = [UIColor clearColor];
+        self.userInteractionEnabled = YES;
 
-- (void)updateUI {
-    if (_isEnabled) {
-        [_mainBtn setTitle:@"⚡️5x" forState:UIControlStateNormal];
-        _mainBtn.backgroundColor = [UIColor colorWithRed:0.15 green:0.68 blue:0.38 alpha:0.9];
-        _btnOn.backgroundColor = [UIColor colorWithRed:0.15 green:0.68 blue:0.38 alpha:1.0];
-        [_btnOn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-        _btnOff.backgroundColor = [UIColor colorWithRed:0.22 green:0.22 blue:0.25 alpha:1.0];
-        [_btnOff setTitleColor:[UIColor lightGrayColor] forState:UIControlStateNormal];
-    } else {
-        [_mainBtn setTitle:@"OFF" forState:UIControlStateNormal];
-        _mainBtn.backgroundColor = [UIColor colorWithRed:0.85 green:0.25 blue:0.20 alpha:0.9];
-        _btnOff.backgroundColor = [UIColor colorWithRed:0.85 green:0.25 blue:0.20 alpha:1.0];
-        [_btnOff setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-        _btnOn.backgroundColor = [UIColor colorWithRed:0.22 green:0.22 blue:0.25 alpha:1.0];
-        [_btnOn setTitleColor:[UIColor lightGrayColor] forState:UIControlStateNormal];
+        // Mặc định BẬT Speed 5x và BẬT Bé Ruồi
+        _isSpeedEnabled = YES;
+        set_speed_factor(5.0f);
+
+        // Tạo bé ruồi
+        _fly = [[FlyView alloc] initWithFrame:CGRectMake(frame.size.width / 2.0, frame.size.height / 2.0, 24, 24)];
+        [self addSubview:_fly];
+
+        // Gắn cử chỉ: Chạm 3 ngón tay (3 touches), gõ 2 lần (2 taps)
+        UITapGestureRecognizer *tripleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleSecretGesture:)];
+        tripleTap.numberOfTouchesRequired = 3;
+        tripleTap.numberOfTapsRequired = 2;
+        tripleTap.cancelsTouchesInView = NO;
+        tripleTap.delegate = self;
+        [self addGestureRecognizer:tripleTap];
     }
+    return self;
 }
 
-- (void)btnTapped:(UIButton *)sender {
-    [self resetTimer];
-    self.alpha = 1.0;
-    _isEnabled = (sender.tag == 2);
-    set_speed_factor(_isEnabled ? 5.0f : 1.0f);
-    [self updateUI];
+// Bấm xuyên qua lớp Overlay để không bao giờ bị liệt cảm ứng chơi game
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    return nil; // Trả về nil để game bên dưới nhận trọn vẹn 100% cảm ứng
 }
 
-- (void)toggleMenu {
-    [self resetTimer];
-    self.alpha = 1.0;
-    BOOL willShow = _panel.hidden;
-    if (willShow) _panel.hidden = NO;
-
-    [UIView animateWithDuration:0.25 animations:^{
-        self.panel.alpha = willShow ? 1.0 : 0.0;
-    } completion:^(BOOL f) {
-        if (!willShow) self.panel.hidden = YES;
-    }];
+// Cho phép nhận diện cử chỉ song song với các thao tác trong game
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
+    return YES;
 }
 
-- (void)handlePan:(UIPanGestureRecognizer *)pan {
-    [self resetTimer];
-    self.alpha = 1.0;
-    CGPoint trans = [pan translationInView:self.superview];
-    self.center = CGPointMake(self.center.x + trans.x, self.center.y + trans.y);
-    [pan setTranslation:CGPointZero inView:self.superview];
+// Xử lý bật / tắt khi chạm 3 ngón 2 lần
+- (void)handleSecretGesture:(UITapGestureRecognizer *)gesture {
+    if (gesture.state != UIGestureRecognizerStateEnded) return;
 
-    if (pan.state == UIGestureRecognizerStateEnded) {
-        CGFloat screenW = self.superview.bounds.size.width;
-        CGFloat targetX = (self.center.x < screenW / 2.0) ? 35 : (screenW - 35);
-        _panel.frame = (targetX > screenW / 2.0) ? CGRectMake(-180, 2.5, 175, 45) : CGRectMake(55, 2.5, 175, 45);
+    _isSpeedEnabled = !_isSpeedEnabled;
 
-        [UIView animateWithDuration:0.25 animations:^{
-            self.center = CGPointMake(targetX, self.center.y);
+    // Rung phản hồi tinh tế (Haptic Feedback)
+    if (@available(iOS 10.0, *)) {
+        UIImpactFeedbackGenerator *feedback = [[UIImpactFeedbackGenerator alloc] initWithStyle:_isSpeedEnabled ? UIImpactFeedbackStyleHeavy : UIImpactFeedbackStyleRigid];
+        [feedback prepare];
+        [feedback impactOccurred];
+    }
+
+    if (_isSpeedEnabled) {
+        // BẬT: Đặt tốc độ 5x và Hiện bé ruồi bay ra
+        set_speed_factor(5.0f);
+        _fly.hidden = NO;
+        [UIView animateWithDuration:0.3 animations:^{
+            self.fly.alpha = 1.0;
+            self.fly.transform = CGAffineTransformIdentity;
         }];
-        [self resetTimer];
+        [_fly scheduleNextMove];
+    } else {
+        // TẮT: Đặt tốc độ 1x gốc và Ẩn bé ruồi đi
+        set_speed_factor(1.0f);
+        [UIView animateWithDuration:0.3 animations:^{
+            self.fly.alpha = 0.0;
+            self.fly.transform = CGAffineTransformMakeScale(0.1, 0.1);
+        } completion:^(BOOL finished) {
+            self.fly.hidden = YES;
+        }];
     }
-}
-
-- (void)resetTimer {
-    [_fadeTimer invalidate];
-    _fadeTimer = [NSTimer scheduledTimerWithTimeInterval:3.0 target:self selector:@selector(dim) userInfo:nil repeats:NO];
-}
-
-- (void)dim {
-    if (!_panel.hidden) [self toggleMenu];
-    [UIView animateWithDuration:0.4 animations:^{ self.alpha = 0.15; }];
 }
 
 @end
